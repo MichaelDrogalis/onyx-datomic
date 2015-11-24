@@ -1,4 +1,4 @@
-(defproject org.onyxplatform/onyx-datomic "0.8.1.0-alpha1"
+(defproject org.onyxplatform/onyx-datomic "0.8.1.0-alpha2"
   :description "Onyx plugin for Datomic"
   :url "https://github.com/MichaelDrogalis/onyx-datomic"
   :license {:name "Eclipse Public License"
@@ -13,7 +13,7 @@
                              :sign-releases false}}
   :dependencies [[org.clojure/clojure "1.7.0"]
                  ^{:voom {:repo "git@github.com:onyx-platform/onyx.git" :branch "master"}}
-                 [org.onyxplatform/onyx "0.8.0"]]
+                 [org.onyxplatform/onyx "0.8.1-alpha2"]]
   :profiles {:dev {:dependencies [[midje "1.7.0"]
                                   [com.datomic/datomic-free "0.9.5153"]]
                    :plugins [[lein-midje "3.1.3"]
