@@ -5,6 +5,7 @@
             [onyx.peer.function :as function]
             [onyx.types :as t]
             [onyx.static.default-vals :refer [defaults]]
+            [onyx.static.uuid :refer [random-uuid]]
             [onyx.extensions :as extensions]
             [taoensso.timbre :refer [info debug fatal]]))
 
@@ -82,13 +83,13 @@
                                    datoms (seq (drop num-ignored
                                                      (datoms-sequence db task-map)))]
                               (when datoms
-                                (let [success? (>!! ch (assoc (t/input (java.util.UUID/randomUUID)
+                                (let [success? (>!! ch (assoc (t/input (random-uuid)
                                                                        {:datoms (map unroll (take datoms-per-segment datoms))})
                                                               :chunk-index chunk-index))]
                                   (if success?
                                     (recur (inc chunk-index)
                                            (seq (drop datoms-per-segment datoms)))))))
-                            (>!! ch (t/input (java.util.UUID/randomUUID) :done))
+                            (>!! ch (t/input (random-uuid) :done))
                             (catch Exception e
                               (fatal e))))]
 
@@ -154,7 +155,7 @@
   (retry-segment
     [_ event segment-id]
     (when-let [msg (get @pending-messages segment-id)]
-      (>!! read-ch (assoc msg :id (java.util.UUID/randomUUID))))
+      (>!! read-ch (assoc msg :id (random-uuid))))
     (swap! pending-messages dissoc segment-id))
 
   (pending?
@@ -272,7 +273,7 @@
                                                                       (< (:t %) max-tx))
                                                                  entries)]
                                              (>!! read-ch
-                                                  (t/input (java.util.UUID/randomUUID)
+                                                  (t/input (random-uuid)
                                                            (update (into {} entry)
                                                                    :data
                                                                    (partial map unroll-log-datom)))))
@@ -284,7 +285,7 @@
                                            (recur tx-index next-backoff)))
                                        :shutdown))]
                           (if-not (= exit :shutdown)
-                            (>!! read-ch (t/input (java.util.UUID/randomUUID) :done))))
+                            (>!! read-ch (t/input (random-uuid) :done))))
                         (catch Exception e
                           (fatal e))))]
 
@@ -350,7 +351,7 @@
   (retry-segment
     [_ event segment-id]
     (when-let [msg (get @pending-messages segment-id)]
-      (>!! read-ch (assoc msg :id (java.util.UUID/randomUUID))))
+      (>!! read-ch (assoc msg :id (random-uuid))))
     (swap! pending-messages dissoc segment-id))
 
   (pending?
