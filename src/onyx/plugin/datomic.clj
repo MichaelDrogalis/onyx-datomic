@@ -63,7 +63,8 @@
 
 (defn inject-read-datoms-resources
   [{:keys [onyx.core/task-map onyx.core/log onyx.core/task-id onyx.core/pipeline] :as event} lifecycle]
-  (when-not (= 1 (:onyx/max-peers task-map))
+  (when-not (or (= 1 (:onyx/max-peers task-map))
+                (= 1 (:onyx/n-peers task-map)))
     (throw (ex-info "Read datoms tasks must set :onyx/max-peers 1" task-map)))
   (let [_ (extensions/write-chunk log :chunk {:chunk-index -1 :status :incomplete} task-id)
         content (extensions/read-chunk log :chunk task-id)]
@@ -241,7 +242,8 @@
 
 (defn inject-read-log-resources
   [{:keys [onyx.core/task-map onyx.core/log onyx.core/task-id onyx.core/pipeline] :as event} lifecycle]
-  (when-not (= 1 (:onyx/max-peers task-map))
+  (when-not (or (= 1 (:onyx/max-peers task-map))
+                (= 1 (:onyx/n-peers task-map)))
     (throw (ex-info "Read log tasks must set :onyx/max-peers 1" task-map)))
   (let [start-tx (:datomic/log-start-tx task-map)
         max-tx (:datomic/log-end-tx task-map)
