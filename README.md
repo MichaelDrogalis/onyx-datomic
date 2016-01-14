@@ -7,7 +7,7 @@ Onyx plugin providing read and write facilities for batch processing a Datomic d
 In your project file:
 
 ```clojure
-[org.onyxplatform/onyx-datomic "0.8.3.0"]
+[org.onyxplatform/onyx-datomic "0.8.4.0"]
 ```
 
 In your peer boot-up namespace:
@@ -160,7 +160,8 @@ its place.
 ##### commit-tx
 
 Writes new entity maps to datomic. Will automatically assign tempid's for the partition
-if a value for :datomic/partition is supplied and datomic transaction data is in map form.
+if a value for :datomic/partition is supplied and datomic transaction data is in map form. 
+tx-data returned by datomic.api/transact is injected into the pipeline event map under `:datomic/written`.
 
 Catalog entry:
 
@@ -191,7 +192,11 @@ Lifecycle entry:
 
 ##### commit-bulk-tx
 
-Writes transactions via the `:tx` segment key to a Datomic database. The value of `:tx` should be as if it were ready for `(d/transact uri tx)`. This lets you perform retractions and arbitrary db functions.
+Writes transactions via the `:tx` segment key to a Datomic database. The value
+of `:tx` should be as if it were ready for `(d/transact uri tx)`. This lets you
+perform retractions and arbitrary db functions.  tx-data returned by
+datomic.api/transact is injected into the pipeline event
+map under `:datomic/written`.
 
 Catalog entry:
 

@@ -1,3 +1,6 @@
+#### 0.8.3.1
+* written tx data is now included in the event map under :datomic/written
+
 #### 0.7.2.0
 * Add a read-log input plugin to read the datomic log.
 

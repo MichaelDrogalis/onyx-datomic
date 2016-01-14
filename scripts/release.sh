@@ -26,7 +26,7 @@ if [[ $biggest_tag > $version_base || $biggest_tag == $version_base && $version_
 	if [[ $answer != "Y" ]]; then
 		exit 1
 	fi
-  fi
+fi
 
 release_branch=$2
 current_version=`lein pprint :version | sed s/\"//g`

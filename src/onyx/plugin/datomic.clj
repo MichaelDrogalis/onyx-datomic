@@ -412,12 +412,12 @@
   (write-batch
     [_ event]
     (let [messages (mapcat :leaves (:tree (:onyx.core/results event)))]
-      @(d/transact conn
-                   (map (fn [msg] (if (and partition (not (sequential? msg)))
-                                    (assoc msg :db/id (d/tempid partition))
-                                    msg))
-                        (map :message messages)))
-      {:onyx.core/written? true}))
+      {:datomic/written @(d/transact conn
+                                     (map (fn [msg] (if (and partition (not (sequential? msg)))
+                                                      (assoc msg :db/id (d/tempid partition))
+                                                      msg))
+                                          (map :message messages)))
+       :onyx.core/written? true}))
 
   (seal-resource
     [_ _]
@@ -437,10 +437,11 @@
 
   (write-batch
     [_ event]
-    ;; Transact each tx individually to avoid tempid conflicts.
-    (doseq [tx (mapcat :leaves (:tree (:onyx.core/results event)))]
-      @(d/transact conn (:tx (:message tx))))
-    {:onyx.core/written? true})
+    {;; Transact each tx individually to avoid tempid conflicts.
+     :datomic/written (mapv (fn [tx] 
+                              @(d/transact conn (:tx (:message tx))))
+                            (mapcat :leaves (:tree (:onyx.core/results event))))
+     :onyx.core/written? true})
 
   (seal-resource
     [_ _]
