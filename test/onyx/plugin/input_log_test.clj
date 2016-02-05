@@ -7,7 +7,6 @@
             [midje.sweet :refer :all]
             [datomic.api :as d]))
 
-;; TODO: NEED TO ADD A TEST SELECTOR SO THIS TEST ONLY RUNS ON CIRCLE CI
 
 (def id (java.util.UUID/randomUUID))
 
@@ -30,7 +29,7 @@
 
 (def peer-group (onyx.api/start-peer-group peer-config))
 
-(def db-uri 
+(def db-uri
   (str "datomic:free://127.0.0.1:4334/" (java.util.UUID/randomUUID)))
 
 (def schema
@@ -43,12 +42,6 @@
     :db/valueType :db.type/string
     :db/cardinality :db.cardinality/one
     :db.install/_attribute :db.part/db}])
-
-(d/create-database db-uri)
-
-(def conn (d/connect db-uri))
-
-@(d/transact conn schema)
 
 (def people
   [{:db/id (d/tempid :com.mdrogalis/people)
@@ -123,38 +116,6 @@
    {:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Benti2"}])
 
-@(d/transact conn people2)
-
-(def results (take-segments! out-chan))
-
-(onyx.api/await-job-completion peer-config job-id)
-
-(fact (map (fn [result]
-             (if (= result :done)
-               :done
-               ;; drop tx datom and id
-               (-> result
-                   (update :data rest)
-                   (dissoc :id))))
-           results)
-      =>
-      [{:data '(;[13194139534312 50 #inst "2015-08-19T13:27:59.237-00:00" 13194139534312 true]
-                [63 10 :com.mdrogalis/people 13194139534312 true]
-                [0 11 63 13194139534312 true]
-                [64 10 :user/name 13194139534312 true]
-                [64 40 23 13194139534312 true]
-                [64 41 35 13194139534312 true]
-                [0 13 64 13194139534312 true])
-        :t 1000}
-       {:data '(;[13194139534313 50 #inst "2015-08-19T13:27:59.256-00:00" 13194139534313 true]
-                [277076930200554 64 "Mike" 13194139534313 true]
-                [277076930200555 64 "Dorrene" 13194139534313 true]
-                [277076930200556 64 "Benti" 13194139534313 true]
-                [277076930200557 64 "Derek" 13194139534313 true]
-                [277076930200558 64 "Kristen" 13194139534313 true])
-        :t 1001}
-       :done])
-
 (def people3
   [{:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Mike3"}
@@ -162,8 +123,6 @@
     :user/name "Dorrene3"}
    {:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Benti3"}])
-
-@(d/transact conn people3)
 
 (def people4
   [{:db/id (d/tempid :com.mdrogalis/people)
@@ -225,12 +184,12 @@
                    (update :data rest)
                    (dissoc :id))))
            results2)
-      => [{:data '([277076930200560 64 "Mike2" 13194139534319 true] 
-                  [277076930200561 64 "Dorrene2" 13194139534319 true] 
-                  [277076930200562 64 "Benti2" 13194139534319 true]), :t 1007} 
-          {:data '([277076930200564 64 "Mike3" 13194139534323 true] 
-                  [277076930200565 64 "Dorrene3" 13194139534323 true] 
-                  [277076930200566 64 "Benti3" 13194139534323 true]), :t 1011} :done])
+      => [{:data '([277076930200560 64 "Mike2" 13194139534319 true]
+                   [277076930200561 64 "Dorrene2" 13194139534319 true]
+                   [277076930200562 64 "Benti2" 13194139534319 true]), :t 1007}
+          {:data '([277076930200564 64 "Mike3" 13194139534323 true]
+                   [277076930200565 64 "Dorrene3" 13194139534323 true]
+                   [277076930200566 64 "Benti3" 13194139534323 true]), :t 1011} :done])
 
 (doseq [v-peer v-peers]
   (onyx.api/shutdown-peer v-peer))

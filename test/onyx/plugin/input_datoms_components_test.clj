@@ -1,9 +1,14 @@
 (ns onyx.plugin.input-datoms-components-test
-  (:require [clojure.core.async :refer [chan >!! <!!]]
-            [onyx.plugin.core-async :refer [take-segments!]]
-            [onyx.plugin.datomic]
-            [onyx.api]
-            [midje.sweet :refer :all]
+  (:require [aero.core :refer [read-config]]
+            [clojure.test :refer [deftest is]]
+            [onyx api
+             [job :refer [add-task]]
+             [test-helper :refer [with-test-env]]]
+            [onyx.datomic.tasks :refer [read-datomic-datoms]]
+            [onyx.plugin
+             [core-async :refer [take-segments!]]
+             [core-async-tasks :as core-async]
+             [datomic]]
             [datomic.api :as d]))
 
 (def id (java.util.UUID/randomUUID))
@@ -41,12 +46,6 @@
     :db/cardinality :db.cardinality/one
     :db.install/_attribute :db.part/db}])
 
-(d/create-database db-uri)
-
-(def conn (d/connect db-uri))
-
-@(d/transact conn schema)
-
 (def people
   [{:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Mike"}
@@ -59,71 +58,21 @@
    {:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Kristen"}])
 
-@(d/transact conn people)
-
-(def db (d/db conn))
-
-(def t (d/next-t db))
-
-(def batch-size 20)
-
-(def out-chan (chan 1000))
-
-(def workflow
-  [[:read-datoms :persist]])
-
-(def catalog
-  [{:onyx/name :read-datoms
-    :onyx/plugin :onyx.plugin.datomic/read-datoms
-    :onyx/type :input
-    :onyx/medium :datomic
-    :datomic/uri db-uri
-    :datomic/t t
-    :datomic/datoms-index :avet
-    :datomic/datoms-per-segment 20
-    :datomic/datoms-components [:user/name "Mike"] 
-    :onyx/max-peers 1
-    :onyx/batch-size batch-size
-    :onyx/doc "Reads a sequence of datoms from the d/datoms API"}
-
-   {:onyx/name :persist
-    :onyx/plugin :onyx.plugin.core-async/output
-    :onyx/type :output
-    :onyx/medium :core.async
-    :onyx/batch-size 20
-    :onyx/max-peers 1
-    :onyx/doc "Writes segments to a core.async channel"}])
-
-(defn inject-persist-ch [event lifecycle]
-  {:core.async/chan out-chan})
-
-(def persist-calls
-  {:lifecycle/before-task-start inject-persist-ch})
 
 
-(def lifecycles
-  [{:lifecycle/task :read-datoms
-    :lifecycle/calls :onyx.plugin.datomic/read-datoms-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls ::persist-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls :onyx.plugin.core-async/writer-calls}])
-
-(def v-peers (onyx.api/start-peers 3 peer-group))
-
-(onyx.api/submit-job
- peer-config
- {:catalog catalog :workflow workflow :lifecycles lifecycles
-  :task-scheduler :onyx.task-scheduler/balanced})
-
-(def results (take-segments! out-chan))
-
-(fact (set (map #(nth % 2) (mapcat :datoms results)))
-      => #{"Mike"})
-
-(doseq [v-peer v-peers]
-  (onyx.api/shutdown-peer v-peer))
-
-(onyx.api/shutdown-peer-group peer-group)
-
-(onyx.api/shutdown-env env)
+(deftest datomic-datoms-components-test
+  (let [db-uri (str "datomic:mem://" (java.util.UUID/randomUUID))
+        {:keys [env-config peer-config]} (read-config
+                                          (clojure.java.io/resource "config.edn")
+                                          {:profile :test})
+        _ (mapv (partial ensure-datomic! db-uri) [[] schema people])
+        t (d/next-t (d/db (d/connect db-uri)))
+        job (build-job db-uri t 10 1000)
+        {:keys [persist]} (core-async/get-core-async-channels job)]
+    (try
+      (with-test-env [test-env [3 env-config peer-config]]
+        (onyx.test-helper/validate-enough-peers! test-env job)
+        (onyx.api/submit-job peer-config job)
+        (is (= (set (map #(nth % 2) (mapcat :datoms (take-segments! persist))))
+               #{"Mike"})))
+      (finally (d/delete-database db-uri)))))

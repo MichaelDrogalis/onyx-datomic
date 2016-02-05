@@ -1,13 +1,16 @@
 (ns onyx.plugin.input-log-kill-test
-  (:require [clojure.core.async :refer [chan >!! <!! sliding-buffer]]
-            [onyx.plugin.core-async :refer [take-segments!]]
-            [onyx.plugin.datomic]
-            [onyx.api]
-            [taoensso.timbre :refer [info debug fatal]]
-            [midje.sweet :refer :all]
+  (:require [aero.core :refer [read-config]]
+            [clojure.test :refer [deftest is testing]]
+            [onyx api
+             [job :refer [add-task]]
+             [test-helper :refer [with-test-env]]]
+            [onyx.datomic.tasks :refer [read-datomic-log]]
+            [onyx.plugin
+             [core-async :refer [take-segments!]]
+             [core-async-tasks :as core-async]
+             [datomic]]
             [datomic.api :as d]))
 
-(def id (java.util.UUID/randomUUID))
 
 (def env-config
   {:zookeeper/address "127.0.0.1:2188"
@@ -41,12 +44,6 @@
     :db/cardinality :db.cardinality/one
     :db.install/_attribute :db.part/db}])
 
-(d/create-database db-uri)
-
-(def conn (d/connect db-uri))
-
-@(d/transact conn schema)
-
 (def people
   [{:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Mike"}
@@ -59,59 +56,6 @@
    {:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Kristen"}])
 
-@(d/transact conn people)
-
-(def db (d/db conn))
-
-(def batch-size 20)
-
-(def out-chan (chan (sliding-buffer 1000)))
-
-(def workflow
-  [[:read-log :persist]])
-
-(def catalog
-  [{:onyx/name :read-log
-    :onyx/plugin :onyx.plugin.datomic/read-log
-    :onyx/type :input
-    :onyx/medium :datomic
-    :datomic/uri db-uri
-    :checkpoint/key "global-checkpoint-key"
-    :checkpoint/force-reset? false
-    :onyx/max-peers 1
-    :onyx/batch-size batch-size
-    :onyx/doc "Reads a sequence of datoms from the d/tx-range API"}
-
-   {:onyx/name :persist
-    :onyx/plugin :onyx.plugin.core-async/output
-    :onyx/type :output
-    :onyx/medium :core.async
-    :onyx/batch-size 20
-    :onyx/max-peers 1
-    :onyx/doc "Writes segments to a core.async channel"}])
-
-(defn inject-persist-ch [event lifecycle]
-  {:core.async/chan out-chan})
-
-(def persist-calls
-  {:lifecycle/before-task-start inject-persist-ch})
-
-(def lifecycles
-  [{:lifecycle/task :read-log
-    :lifecycle/calls :onyx.plugin.datomic/read-log-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls ::persist-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls :onyx.plugin.core-async/writer-calls}])
-
-(def v-peers (onyx.api/start-peers 3 peer-group))
-
-(def job-id
-  (:job-id (onyx.api/submit-job
-             peer-config
-             {:catalog catalog :workflow workflow :lifecycles lifecycles
-              :task-scheduler :onyx.task-scheduler/balanced})))
-
 (def people2
   [{:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Mike2"}
@@ -120,23 +64,28 @@
    {:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Benti2"}])
 
-(def transact-constantly
+(defn transact-constantly [db-uri]
   (future
-    (while (not (Thread/interrupted)) 
+    (while (not (Thread/interrupted))
       (Thread/sleep 5)
-      @(d/transact conn people2))))
+      (ensure-datomic! db-uri people2))))
 
-(Thread/sleep 10000)
-
-(onyx.api/kill-job peer-config job-id)
-
-(fact (onyx.api/await-job-completion peer-config job-id) => false)
-
-(future-cancel transact-constantly)
-
-(doseq [v-peer v-peers]
-  (onyx.api/shutdown-peer v-peer))
-
-(onyx.api/shutdown-peer-group peer-group)
-
-(onyx.api/shutdown-env env)
+(deftest ^:ci datomic-input-log-kill-test
+  (let [db-uri (str "datomic:free://localhost:4334/" (java.util.UUID/randomUUID))
+        {:keys [env-config peer-config]}
+        (read-config (clojure.java.io/resource "config.edn") {:profile :test})
+        job (build-job db-uri 10 1000)
+        {:keys [persist]} (core-async/get-core-async-channels job)
+        job-id (atom nil)
+        tx-thread (atom nil)]
+    (try
+      (with-test-env [test-env [4 env-config peer-config]]
+        (testing "That we can read the initial transaction log"
+          (mapv (partial ensure-datomic! db-uri) [schema people])
+          (reset! job-id (:job-id (onyx.api/submit-job peer-config job)))
+          (reset! tx-thread (transact-constantly db-uri))
+          (Thread/sleep 5000)
+          (onyx.api/kill-job peer-config @job-id)
+          (is (not (onyx.api/await-job-completion peer-config @job-id)))
+          (swap! tx-thread future-cancel)))
+      (finally (d/delete-database db-uri)))))

@@ -6,14 +6,20 @@ dependencies:
 
 test:
   override:
-    - lein with-profile dev,circle-ci midje:
-        timeout: 480 
+    - lein with-profile dev,circle-ci test :default:
+        timeout: 480
 
 machine:
   java:
     version: oraclejdk8
   services:
     - docker
+  pre:
+#    - wget --no-check-certificate --http-user=${DATOMIC_USERNAME} --http-password=${DATOMIC_PASSWORD} https://my.datomic.com/repo/com/datomic/datomic-pro/0.9.5350/datomic-pro-0.9.5350.zip -O datomic-pro-0.9.5350.zip
+#    - unzip datomic-pro-0.9.5350.zip
+#    - sed -ie 's@license-key=@'"license-key=$DATOMIC_LICENSE_KEY"'@' datomic-pro-0.9.5350/config/samples/dev-transactor-template.properties
+#    - datomic-pro-0.9.5350/bin/transactor config/samples/dev-transactor-template.properties :
+#        background: true
 
 notify:
   webhooks:
