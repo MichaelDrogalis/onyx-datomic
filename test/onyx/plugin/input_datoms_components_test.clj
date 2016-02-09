@@ -79,7 +79,6 @@
     :onyx/medium :datomic
     :datomic/uri db-uri
     :datomic/t t
-    :datomic/partition :com.mdrogalis/people
     :datomic/datoms-index :avet
     :datomic/datoms-per-segment 20
     :datomic/datoms-components [:user/name "Mike"] 

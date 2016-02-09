@@ -81,9 +81,6 @@
   [[:read-datoms :query]
    [:query :persist]])
 
-(defn restartable? [e]
-  true)
-
 (def catalog
   [{:onyx/name :read-datoms
     :onyx/plugin :onyx.plugin.datomic/read-datoms
@@ -91,10 +88,8 @@
     :onyx/medium :datomic
     :datomic/uri db-uri
     :datomic/t t
-    :datomic/partition :com.mdrogalis/people
     :datomic/datoms-index :eavt
     :datomic/datoms-per-segment 1
-    :onyx/restart-pred-fn :onyx.plugin.input-fault-tolerance-test/restartable?
     :onyx/max-peers 1
     :onyx/batch-size batch-size
     :onyx/doc "Reads a sequence of datoms from the d/datoms API"}
@@ -127,7 +122,8 @@
                              ;; the chunks out and ack the batches
                              (when (zero? (mod (swap! batch-num inc) 3))
                                (Thread/sleep 3000) 
-                               (throw (ex-info "Restartable" {:restartable? true}))))})
+                               (throw (ex-info "Restartable" {:restartable? true}))))
+   :lifecycle/handle-exception (constantly :restart)})
 
 (def lifecycles
   [{:lifecycle/task :read-datoms

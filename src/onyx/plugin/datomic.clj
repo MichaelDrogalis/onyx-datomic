@@ -7,7 +7,61 @@
             [onyx.static.default-vals :refer [defaults]]
             [onyx.static.uuid :refer [random-uuid]]
             [onyx.extensions :as extensions]
+            [schema.core :as s]
+            [onyx.schema :as os]
             [taoensso.timbre :refer [info debug fatal]]))
+
+;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;
+;; task schemas
+
+(def UserTaskMapKey
+  (os/build-allowed-key-ns :datomic))
+
+(def DatomicReadLogTaskMap
+  (s/->Both [os/TaskMap 
+             {:datomic/uri s/Str
+              (s/optional-key :datomic/log-start-tx) s/Int
+              (s/optional-key :datomic/log-end-tx) s/Int
+              (s/optional-key :checkpoint/key) s/Str
+              :checkpoint/force-reset? s/Bool
+              (s/optional-key :onyx/max-peers) (s/enum 1)
+              (s/optional-key :onyx/n-peers) (s/enum 1)
+              UserTaskMapKey s/Any}]))
+
+(def DatomicReadDatomsTaskMap
+  (s/->Both [os/TaskMap 
+             {:datomic/uri s/Str
+              :datomic/t s/Int
+              :datomic/datoms-index s/Keyword
+              :datomic/datoms-per-segment s/Int
+              (s/optional-key :datomic/datoms-components) [s/Any]
+              (s/optional-key :onyx/max-peers) (s/enum 1)
+              (s/optional-key :onyx/n-peers) (s/enum 1)
+              UserTaskMapKey s/Any}]))
+
+
+(def DatomicReadIndexRangeTaskMap
+  (s/->Both [os/TaskMap 
+             {:datomic/uri s/Str
+              :datomic/t s/Int
+              :datomic/index-attribute s/Any
+              :datomic/index-range-start s/Any
+              :datomic/index-range-end s/Any
+              :datomic/datoms-per-segment s/Int
+              (s/optional-key :onyx/max-peers) (s/enum 1)
+              (s/optional-key :onyx/n-peers) (s/enum 1)
+              UserTaskMapKey s/Any}]))
+
+(def DatomicWriteDatomsTaskMap
+  (s/->Both [os/TaskMap 
+             {:datomic/uri s/Str
+              (s/optional-key :datomic/partition) (s/either s/Int s/Keyword)
+              (s/optional-key :onyx/max-peers) (s/enum 1)
+              (s/optional-key :onyx/n-peers) (s/enum 1)
+              UserTaskMapKey s/Any}]))
+
+;;; Helpers
 
 (defn safe-connect [task-map]
   (if-let [uri (:datomic/uri task-map)]
@@ -45,11 +99,13 @@
 (defn datoms-sequence [db task-map]
   (case (:onyx/plugin task-map)
     ::read-datoms
-    (let [datoms-components (or (:datomic/datoms-components task-map) [])
+    (let [_ (s/validate DatomicReadDatomsTaskMap task-map)
+          datoms-components (or (:datomic/datoms-components task-map) [])
           datoms-index (:datomic/datoms-index task-map)]
       (apply d/datoms db datoms-index datoms-components))
     ::read-index-range
-    (let [attribute (:datomic/index-attribute task-map)
+    (let [_ (s/validate DatomicReadIndexRangeTaskMap task-map)
+          attribute (:datomic/index-attribute task-map)
           range-start (:datomic/index-range-start task-map)
           range-end (:datomic/index-range-end task-map)]
       (d/index-range db attribute range-start range-end))))
@@ -66,6 +122,7 @@
   (when-not (or (= 1 (:onyx/max-peers task-map))
                 (= 1 (:onyx/n-peers task-map)))
     (throw (ex-info "Read datoms tasks must set :onyx/max-peers 1" task-map)))
+
   (let [_ (extensions/write-chunk log :chunk {:chunk-index -1 :status :incomplete} task-id)
         content (extensions/read-chunk log :chunk task-id)]
     (if (= :complete (:status content))
@@ -258,6 +315,8 @@
   (when-not (or (= 1 (:onyx/max-peers task-map))
                 (= 1 (:onyx/n-peers task-map)))
     (throw (ex-info "Read log tasks must set :onyx/max-peers 1" task-map)))
+  (s/validate DatomicReadLogTaskMap task-map)
+
   (let [start-tx (:datomic/log-start-tx task-map)
         max-tx (:datomic/log-end-tx task-map)
         {:keys [read-ch shutdown-ch commit-ch]} pipeline
@@ -411,7 +470,7 @@
 ;; output plugins
 
 (defn inject-write-tx-resources
-  [{:keys [onyx.core/pipeline]} lifecycle]
+  [{:keys [onyx.core/pipeline onyx.core/task-map]} lifecycle]
   {:datomic/conn (:conn pipeline)})
 
 (defn inject-write-bulk-tx-resources
@@ -440,6 +499,7 @@
 
 (defn write-datoms [pipeline-data]
   (let [task-map (:onyx.core/task-map pipeline-data)
+        _ (s/validate DatomicWriteDatomsTaskMap task-map)
         conn (safe-connect task-map)
         partition (:datomic/partition task-map)]
     (->DatomicWriteDatoms conn partition)))
@@ -464,6 +524,7 @@
 
 (defn write-bulk-datoms [pipeline-data]
   (let [task-map (:onyx.core/task-map pipeline-data)
+        _ (s/validate DatomicWriteDatomsTaskMap task-map)
         conn (safe-connect task-map)]
     (->DatomicWriteBulkDatoms conn)))
 

@@ -77,6 +77,7 @@
     :onyx/medium :datomic
     :datomic/uri db-uri
     :checkpoint/key "global-checkpoint-key"
+    :checkpoint/force-reset? false
     :onyx/max-peers 1
     :onyx/batch-size batch-size
     :onyx/doc "Reads a sequence of datoms from the d/tx-range API"}
