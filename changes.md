@@ -1,3 +1,6 @@
+#### 0.8.10
+* Fix shutdown issue that could cause input tasks to not stop cleanly
+
 #### 0.8.6.1
 * IMPORTANT FIX: producer threads now feedback exceptions to read-batch rather than just getting stuck
 
