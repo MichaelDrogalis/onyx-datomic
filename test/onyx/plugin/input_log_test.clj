@@ -2,6 +2,7 @@
   (:require [clojure.core.async :refer [chan >!! <!!]]
             [onyx.plugin.core-async :refer [take-segments!]]
             [onyx.plugin.datomic]
+            [onyx.plugin.tasks.datomic :as t]
             [onyx.api]
             [midje.sweet :refer :all]
             [datomic.api :as d]))
@@ -74,19 +75,15 @@
 (def workflow
   [[:read-log :persist]])
 
-(def catalog
-  [{:onyx/name :read-log
-    :onyx/plugin :onyx.plugin.datomic/read-log
-    :onyx/type :input
-    :onyx/medium :datomic
-    :datomic/uri db-uri
-    :checkpoint/key "global-checkpoint-key"
-    :checkpoint/force-reset? false
-    :onyx/max-peers 1
-    :datomic/log-end-tx 1002
-    :onyx/batch-size batch-size
-    :onyx/doc "Reads a sequence of datoms from the d/tx-range API"}
+(def read-log-1 
+  (:task (t/read-log :read-log {:datomic/uri db-uri
+                                :checkpoint/key "global-checkpoint-key"
+                                :checkpoint/force-reset? false
+                                :datomic/log-end-tx 1002
+                                :onyx/batch-size batch-size})))
 
+(def catalog
+  [(:task-map read-log-1)
    {:onyx/name :persist
     :onyx/plugin :onyx.plugin.core-async/output
     :onyx/type :output
@@ -102,12 +99,11 @@
   {:lifecycle/before-task-start inject-persist-ch})
 
 (def lifecycles
-  [{:lifecycle/task :read-log
-    :lifecycle/calls :onyx.plugin.datomic/read-log-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls ::persist-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls :onyx.plugin.core-async/writer-calls}])
+  (into [{:lifecycle/task :persist
+          :lifecycle/calls ::persist-calls}
+         {:lifecycle/task :persist
+          :lifecycle/calls :onyx.plugin.core-async/writer-calls}]
+        (:lifecycles read-log-1)))
 
 (def v-peers (onyx.api/start-peers 3 peer-group))
 
@@ -190,27 +186,22 @@
 (def persist-calls2
   {:lifecycle/before-task-start inject-persist-ch2})
 
+(def read-log-2
+  (:task (t/read-log :read-log {:datomic/uri db-uri
+                                :checkpoint/key "global-checkpoint-key"
+                                :checkpoint/force-reset? false
+                                :datomic/log-end-tx 1014
+                                :onyx/batch-size batch-size})))
+
 (def lifecycles2
-  [{:lifecycle/task :read-log
-    :lifecycle/calls :onyx.plugin.datomic/read-log-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls ::persist-calls2}
-   {:lifecycle/task :persist
-    :lifecycle/calls :onyx.plugin.core-async/writer-calls}])
+  (into [{:lifecycle/task :persist
+          :lifecycle/calls ::persist-calls2}
+         {:lifecycle/task :persist
+          :lifecycle/calls :onyx.plugin.core-async/writer-calls}]
+        (:lifecycles read-log-2)))
 
 (def catalog2
-  [{:onyx/name :read-log
-    :onyx/plugin :onyx.plugin.datomic/read-log
-    :onyx/type :input
-    :onyx/medium :datomic
-    :datomic/uri db-uri
-    :checkpoint/key "global-checkpoint-key"
-    :checkpoint/force-reset? false
-    :datomic/log-end-tx 1014
-    :onyx/max-peers 1
-    :onyx/batch-size batch-size
-    :onyx/doc "Reads a sequence of datoms from the d/tx-range API"}
-
+  [(:task-map read-log-2)
    {:onyx/name :persist
     :onyx/plugin :onyx.plugin.core-async/output
     :onyx/type :output

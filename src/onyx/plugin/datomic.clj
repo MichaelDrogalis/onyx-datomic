@@ -8,59 +8,11 @@
 	    [clojure.core.async.impl.protocols :refer [closed?]]
             [onyx.static.uuid :refer [random-uuid]]
             [onyx.extensions :as extensions]
+            [onyx.plugin.tasks.datomic :refer [DatomicReadLogTaskMap DatomicReadIndexRangeTaskMap 
+                                               DatomicReadDatomsTaskMap DatomicWriteDatomsTaskMap]]
             [schema.core :as s]
             [onyx.schema :as os]
             [taoensso.timbre :refer [info debug fatal]]))
-
-;;;;;;;;;;;;;;
-;;;;;;;;;;;;;;
-;; task schemas
-
-(def UserTaskMapKey
-  (os/build-allowed-key-ns :datomic))
-
-(def DatomicReadLogTaskMap
-  (s/->Both [os/TaskMap 
-             {:datomic/uri s/Str
-              (s/optional-key :datomic/log-start-tx) s/Int
-              (s/optional-key :datomic/log-end-tx) s/Int
-              (s/optional-key :checkpoint/key) s/Str
-              :checkpoint/force-reset? s/Bool
-              (s/optional-key :onyx/max-peers) (s/enum 1)
-              (s/optional-key :onyx/n-peers) (s/enum 1)
-              UserTaskMapKey s/Any}]))
-
-(def DatomicReadDatomsTaskMap
-  (s/->Both [os/TaskMap 
-             {:datomic/uri s/Str
-              :datomic/t s/Int
-              :datomic/datoms-index s/Keyword
-              :datomic/datoms-per-segment s/Int
-              (s/optional-key :datomic/datoms-components) [s/Any]
-              (s/optional-key :onyx/max-peers) (s/enum 1)
-              (s/optional-key :onyx/n-peers) (s/enum 1)
-              UserTaskMapKey s/Any}]))
-
-
-(def DatomicReadIndexRangeTaskMap
-  (s/->Both [os/TaskMap 
-             {:datomic/uri s/Str
-              :datomic/t s/Int
-              :datomic/index-attribute s/Any
-              :datomic/index-range-start s/Any
-              :datomic/index-range-end s/Any
-              :datomic/datoms-per-segment s/Int
-              (s/optional-key :onyx/max-peers) (s/enum 1)
-              (s/optional-key :onyx/n-peers) (s/enum 1)
-              UserTaskMapKey s/Any}]))
-
-(def DatomicWriteDatomsTaskMap
-  (s/->Both [os/TaskMap 
-             {:datomic/uri s/Str
-              (s/optional-key :datomic/partition) (s/either s/Int s/Keyword)
-              (s/optional-key :onyx/max-peers) (s/enum 1)
-              (s/optional-key :onyx/n-peers) (s/enum 1)
-              UserTaskMapKey s/Any}]))
 
 ;;; Helpers
 

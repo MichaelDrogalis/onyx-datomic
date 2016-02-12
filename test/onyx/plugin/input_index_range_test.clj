@@ -2,6 +2,7 @@
   (:require [clojure.core.async :refer [chan >!! <!!]]
             [onyx.plugin.core-async :refer [take-segments!]]
             [onyx.plugin.datomic]
+            [onyx.plugin.tasks.datomic :refer [read-index-range]]
             [onyx.api]
             [midje.sweet :refer :all]
             [datomic.api :as d]))
@@ -80,21 +81,16 @@
 (def workflow
   [[:read-index-datoms :persist]])
 
-(def catalog
-  [{:onyx/name :read-index-datoms
-    :onyx/plugin :onyx.plugin.datomic/read-index-range
-    :onyx/type :input
-    :onyx/medium :datomic
-    :datomic/uri db-uri
-    :datomic/t t
-    :datomic/index-attribute :user/name
-    :datomic/index-range-start "Benti"
-    :datomic/index-range-end "Kristen"
-    :datomic/datoms-per-segment 20
-    :onyx/max-peers 1
-    :onyx/batch-size batch-size
-    :onyx/doc "Reads a range of datoms from the d/index-range API"}
+(def index-datoms-task 
+  (:task (read-index-range :read-index-datoms {:datomic/uri db-uri
+                                               :datomic/t t
+                                               :datomic/index-attribute :user/name
+                                               :datomic/index-range-start "Benti"
+                                               :datomic/index-range-end "Kristen"
+                                               :onyx/batch-size batch-size})))
 
+(def catalog
+  [(:task-map index-datoms-task)
    {:onyx/name :persist
     :onyx/plugin :onyx.plugin.core-async/output
     :onyx/type :output
@@ -109,14 +105,12 @@
 (def persist-calls
   {:lifecycle/before-task-start inject-persist-ch})
 
-
 (def lifecycles
-  [{:lifecycle/task :read-index-datoms
-    :lifecycle/calls :onyx.plugin.datomic/read-index-range-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls ::persist-calls}
-   {:lifecycle/task :persist
-    :lifecycle/calls :onyx.plugin.core-async/writer-calls}])
+  (into [{:lifecycle/task :persist
+          :lifecycle/calls ::persist-calls}
+         {:lifecycle/task :persist
+          :lifecycle/calls :onyx.plugin.core-async/writer-calls}]
+        (:lifecycles index-datoms-task)))
 
 (def v-peers (onyx.api/start-peers 3 peer-group))
 
