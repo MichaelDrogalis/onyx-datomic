@@ -12,7 +12,7 @@
   {:zookeeper/address "127.0.0.1:2188"
    :zookeeper/server? true
    :zookeeper.server/port 2188
-   :onyx/id id})
+   :onyx/tenancy-id id})
 
 (def peer-config
   {:zookeeper/address "127.0.0.1:2188"
@@ -21,7 +21,7 @@
    :onyx.messaging/peer-port 40200
    :onyx.messaging/bind-addr "localhost"
    :onyx.messaging/backpressure-strategy :high-restart-latency
-   :onyx/id id})
+   :onyx/tenancy-id id})
 
 (def env (onyx.api/start-env env-config))
 
@@ -40,85 +40,29 @@
     :db/cardinality :db.cardinality/one
     :db.install/_attribute :db.part/db}])
 
-(d/create-database db-uri)
-
-(def datomic-conn (d/connect db-uri))
-
-@(d/transact datomic-conn schema)
-
 (def people
   [{:name "Mike"}
    {:name "Dorrene"}
    {:name "Benti"}
    {:name "Kristen"}
-   {:name "Derek"}])
+   {:name "Derek"}
+   :done])
 
-(def in-chan (chan 1000))
-
-(doseq [person people]
-  (>!! in-chan person))
-
-(>!! in-chan :done)
-
-(def workflow
-  [[:in :identity]
-   [:identity :out]])
-
-(def catalog
-  [{:onyx/name :in
-    :onyx/plugin :onyx.plugin.core-async/input
-    :onyx/type :input
-    :onyx/medium :core.async
-    :onyx/batch-size 1000
-    :onyx/max-peers 1
-    :onyx/doc "Reads segments from a core.async channel"}
-
-   {:onyx/name :identity
-    :onyx/fn :clojure.core/identity
-    :onyx/type :function
-    :onyx/batch-size 2}
-   
-   {:onyx/name :out
-    :onyx/plugin :onyx.plugin.datomic/write-datoms
-    :onyx/type :output
-    :onyx/medium :datomic
-    :datomic/uri db-uri
-    :datomic/partition :com.mdrogalis/people
-    :onyx/batch-size 2
-    :onyx/doc "Transacts segments to storage"}])
-
-(defn inject-in-ch [event lifecycle]
-  {:core.async/chan in-chan})
-
-(def in-calls
-  {:lifecycle/before-task-start inject-in-ch})
-
-(def lifecycles
-  [{:lifecycle/task :in
-    :lifecycle/calls :onyx.plugin.output-test/in-calls}
-   {:lifecycle/task :in
-    :lifecycle/calls :onyx.plugin.core-async/reader-calls}
-   {:lifecycle/task :out
-    :lifecycle/calls :onyx.plugin.datomic/write-tx-calls}])
-
-(def v-peers (onyx.api/start-peers 3 peer-group))
-
-(def job-id
-  (:job-id
-   (onyx.api/submit-job
-    peer-config
-    {:catalog catalog :workflow workflow :lifecycles lifecycles
-     :task-scheduler :onyx.task-scheduler/balanced})))
-
-(onyx.api/await-job-completion peer-config job-id)
-
-(def results (apply concat (d/q '[:find ?a :where [_ :name ?a]] (d/db datomic-conn))))
-
-(fact (set results) => (set (map :name people)))
-
-(doseq [v-peer v-peers]
-  (onyx.api/shutdown-peer v-peer))
-
-(onyx.api/shutdown-peer-group peer-group)
-
-(onyx.api/shutdown-env env)
+(deftest datomic-tx-output-test
+  (let [db-uri (str "datomic:mem://" (java.util.UUID/randomUUID))
+        {:keys [env-config peer-config]} (read-config
+                                          (clojure.java.io/resource "config.edn")
+                                          {:profile :test})
+        job (build-job db-uri 10 1000)
+        {:keys [in]} (core-async/get-core-async-channels job)]
+    (try
+      (with-test-env [test-env [3 env-config peer-config]]
+        (ensure-datomic! db-uri schema)
+        (pipe (spool people) in false)
+        (onyx.test-helper/validate-enough-peers! test-env job)
+        (->> (:job-id (onyx.api/submit-job peer-config job))
+             (onyx.api/await-job-completion peer-config))
+        (let [db (d/db (d/connect db-uri))]
+          (is (= (set (apply concat (d/q '[:find ?a :where [_ :name ?a]] db)))
+                 (set (remove nil? (map :name people)))))))
+      (finally (d/delete-database db-uri)))))

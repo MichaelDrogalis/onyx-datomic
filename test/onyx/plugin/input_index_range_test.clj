@@ -13,7 +13,7 @@
   {:zookeeper/address "127.0.0.1:2188"
    :zookeeper/server? true
    :zookeeper.server/port 2188
-   :onyx/id id})
+   :onyx/tenancy-id id})
 
 (def peer-config
   {:zookeeper/address "127.0.0.1:2188"
@@ -22,7 +22,7 @@
    :onyx.messaging/peer-port 40200
    :onyx.messaging/bind-addr "localhost"
    :onyx.messaging/backpressure-strategy :high-restart-latency
-   :onyx/id id})
+   :onyx/tenancy-id id})
 
 (def env (onyx.api/start-env env-config))
 
@@ -42,12 +42,6 @@
     :db/cardinality :db.cardinality/one
     :db.install/_attribute :db.part/db}])
 
-(d/create-database db-uri)
-
-(def conn (d/connect db-uri))
-
-@(d/transact conn schema)
-
 (def people
   [{:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Mike"}
@@ -59,16 +53,6 @@
     :user/name "Derek"}
    {:db/id (d/tempid :com.mdrogalis/people)
     :user/name "Kristen"}])
-
-@(d/transact conn people)
-
-(def db (d/db conn))
-
-(def t (d/next-t db))
-
-(def batch-size 20)
-
-(def out-chan (chan 1000))
 
 (def query '[:find ?a :where
              [?e :user/name ?a]
@@ -129,4 +113,19 @@
 
 (onyx.api/shutdown-peer-group peer-group)
 
-(onyx.api/shutdown-env env)
+(deftest read-index-range-test
+  (let [db-uri (str "datomic:mem://" (java.util.UUID/randomUUID))
+        {:keys [env-config peer-config]} (read-config
+                                          (clojure.java.io/resource "config.edn")
+                                          {:profile :test})
+        _ (mapv (partial ensure-datomic! db-uri) [[] schema people])
+        t (d/next-t (d/db (d/connect db-uri)))
+        job (build-job db-uri t 10 1000)
+        {:keys [persist]} (core-async/get-core-async-channels job)]
+    (try
+      (with-test-env [test-env [3 env-config peer-config]]
+        (onyx.test-helper/validate-enough-peers! test-env job)
+        (onyx.api/submit-job peer-config job)
+        (is (= (set (map #(nth % 2) (mapcat :datoms (take-segments! persist))))
+               #{"Benti" "Derek" "Dorrene"})))
+      (finally (d/delete-database db-uri)))))

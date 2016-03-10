@@ -7,7 +7,7 @@ Onyx plugin providing read and write facilities for batch processing a Datomic d
 In your project file:
 
 ```clojure
-[org.onyxplatform/onyx-datomic "0.8.11.1"]
+[org.onyxplatform/onyx-datomic "0.9.0.0-SNAPSHOT"]
 ```
 
 In your peer boot-up namespace:
@@ -141,7 +141,7 @@ one is allocated to the task, the new virtual peer will restart reading the log
 at the highest acked point. If a new job is started, this checkpoint
 information will not be used. In order to persist checkpoint information
 between jobs, add `:checkpoint/key "somekey"` to the task-map. This will
-persist checkpoint information for cluster (on a given :onyx/id) under the key,
+persist checkpoint information for cluster (on a given :onyx/tenancy-id) under the key,
 ensuring that any new jobs restart at the checkpoint. This is useful if the
 cluster needs to be restarted, or a job is killed and a new one is created in
 its place.
@@ -154,7 +154,7 @@ its place.
 |`:datomic/log-start-tx`       | `integer` | optional starting tx (inclusive) for log read
 |`:datomic/log-end-tx`         | `integer` | optional ending tx (exclusive) for log read. Sentinel will emitted when this tx is passed.
 |`:checkpoint/force-reset?`    | `boolean` | whether or not checkpointing should be re-initialised from log-start-tx, or 0 in the case of nil
-|`:checkpoint/key`             | `any`     | optional global (for a given onyx/id) key under which to store the checkpoint information. By default the task-id for the job will be used, in which case checkpointing will only be resumed when a virtual peer crashes, and not when a new job is started.
+|`:checkpoint/key`             | `any`     | optional global (for a given onyx/tenancy-id) key under which to store the checkpoint information. By default the task-id for the job will be used, in which case checkpointing will only be resumed when a virtual peer crashes, and not when a new job is started.
 |`:datomic/read-buffer`        | `integer` | The number of segments to buffer after partitioning, default is `1000`
 
 ##### commit-tx
