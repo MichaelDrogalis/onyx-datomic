@@ -190,13 +190,56 @@ Lifecycle entry:
 |`:datomic/uri`                | `string`  | The URI of the datomic database to connect to
 |`:datomic/partition`          | `keyword` | Optional keyword. When supplied, :db/id tempids are added using this partition.
 
-##### commit-bulk-tx
+##### commit-bulk-tx (asynchronous)
 
 Writes transactions via the `:tx` segment key to a Datomic database. The value
 of `:tx` should be as if it were ready for `(d/transact uri tx)`. This lets you
-perform retractions and arbitrary db functions.  tx-data returned by
-datomic.api/transact is injected into the pipeline event
-map under `:datomic/written`.
+perform retractions and arbitrary db functions. tx-data returned by
+datomic.api/transact is injected into the pipeline event map under
+`:datomic/written`. Takes advantage of the Datomic transactor's ability to
+pipeline transactions by asynchronously transacting `:onyx/batch-size`
+transactions at once. Transaction futures are then derefed one by one after.
+Parallelism can thus be controlled by modifying the batch size appropriately.
+This is the recommended way to transact in bulk.
+
+Catalog entry:
+
+```clojure
+{:onyx/name :write-bulk-datoms-async
+ :onyx/plugin :onyx.plugin.datomic/write-bulk-datoms-async
+ :onyx/type :output
+ :onyx/medium :datomic
+ :datomic/uri db-uri
+ :datomic/partition :my.database/partition
+ :onyx/batch-size batch-size
+ :onyx/doc "Transacts segments to storage"}
+```
+
+An example value of `:tx` would look like the following:
+
+```clojure
+(require '[datomic.api :as d])
+
+{:tx [[:db/add (d/tempid :db.part/user) :db/doc "Hello world"]]}
+```
+
+Lifecycle entry:
+
+```clojure
+{:lifecycle/task :write-bulk-datoms-async
+ :lifecycle/calls :onyx.plugin.datomic/write-bulk-tx-async-calls}
+```
+
+###### Attributes
+
+| key                          | type      | description
+|------------------------------|-----------|------------
+|`:datomic/uri`                | `string`  | The URI of the datomic database to connect to
+|`:datomic/partition`          | `keyword` | Optional keyword. When supplied, :db/id tempids are added using this partition.
+
+##### commit-bulk-tx (synchronous)
+
+Exactly the same as commit-bulk-tx (asynchronous), but transacts each tx completely (blocking on the returned future) before proceeding to the next. You should generally prefer the async version.
 
 Catalog entry:
 
