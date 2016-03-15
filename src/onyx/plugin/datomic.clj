@@ -435,6 +435,10 @@
   [{:keys [onyx.core/pipeline]} lifecycle]
   {:datomic/conn (:conn pipeline)})
 
+(defn inject-write-bulk-tx-async-resources
+  [{:keys [onyx.core/pipeline]} lifecycle]
+  {:datomic/conn (:conn pipeline)})
+
 (defrecord DatomicWriteDatoms [conn partition]
   p-ext/Pipeline
   (read-batch
@@ -486,6 +490,31 @@
         conn (safe-connect task-map)]
     (->DatomicWriteBulkDatoms conn)))
 
+(defrecord DatomicWriteBulkDatomsAsync [conn]
+  p-ext/Pipeline
+  (read-batch
+      [_ event]
+    (function/read-batch event))
+
+  (write-batch
+      [_ event]
+    {;; Transact each tx individually to avoid tempid conflicts.
+     :datomic/written (->> (mapv (fn [tx]
+                                   (d/transact-async conn (:tx (:message tx))))
+                                 (mapcat :leaves (:tree (:onyx.core/results event))))
+                           (into [] (comp (map deref))))
+     :onyx.core/written? true})
+
+  (seal-resource
+      [_ _]
+    {}))
+
+(defn write-bulk-datoms-async [pipeline-data]
+  (let [task-map (:onyx.core/task-map pipeline-data)
+        _ (s/validate DatomicWriteDatomsTaskMap task-map)
+        conn (safe-connect task-map)]
+    (->DatomicWriteBulkDatomsAsync conn)))
+
 (def read-datoms-calls
   {:lifecycle/before-task-start inject-read-datoms-resources
    :lifecycle/after-task-stop close-read-datoms-resources})
@@ -494,13 +523,14 @@
   {:lifecycle/before-task-start inject-read-datoms-resources
    :lifecycle/after-task-stop close-read-datoms-resources})
 
-
 (def write-tx-calls
   {:lifecycle/before-task-start inject-write-tx-resources})
 
 (def write-bulk-tx-calls
   {:lifecycle/before-task-start inject-write-bulk-tx-resources})
 
+(def write-bulk-tx-async-calls
+  {:lifecycle/before-task-start inject-write-bulk-tx-async-resources})
 
 ;;;;;;;;;
 ;;; params lifecycles
